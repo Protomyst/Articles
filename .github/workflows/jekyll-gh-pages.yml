@@ -12,11 +12,13 @@ on:
   push:
     branches: ["main"]
 
+# 设置 GITHUB_TOKEN 的权限
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# 允许一个并发部署
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -27,148 +29,112 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.1'
           bundler-cache: true
+      
       - name: Setup Pages
         uses: actions/configure-pages@v4
-      - name: Create Jekyll site
+      
+      - name: Create Jekyll Configuration
         run: |
-          # 创建配置文件
+          # 创建 Gemfile
+          cat > Gemfile <<EOL
+          source 'https://rubygems.org'
+          gem 'jekyll'
+          gem 'jekyll-theme-minimal'
+          gem 'webrick'
+          EOL
+          
+          # 创建 _config.yml
           cat > _config.yml <<EOL
           title: Articles
           description: Collected Articles
           theme: jekyll-theme-minimal
           author: Protomyst
-          permalink: /:categories/:title.html
-          timezone: UTC
-          future: true
+          baseurl: "/Articles"
+          url: "https://protomyst.github.io"
+          
+          # 添加插件支持
+          plugins:
+            - jekyll-theme-minimal
+          
+          # 排除不需要的文件
+          exclude:
+            - Gemfile
+            - Gemfile.lock
+            - node_modules
+            - vendor/bundle/
+            - vendor/cache/
+            - vendor/gems/
+            - vendor/ruby/
+            - .github/
           EOL
           
           # 创建布局目录和文件
           mkdir -p _layouts
-          
-          # 创建默认布局
-          cat > _layouts/default.html <<EOL
-          <!DOCTYPE html>
-          <html lang="zh">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>{{ page.title }} - {{ site.title }}</title>
-            <style>
-              body { max-width: 800px; margin: 0 auto; padding: 20px; font-family: -apple-system, system-ui, sans-serif; line-height: 1.6; }
-              .header { border-bottom: 1px solid #eee; margin-bottom: 20px; }
-              .meta { color: #666; font-size: 0.9em; }
-              .path { color: #666; font-size: 0.9em; margin-bottom: 20px; }
-              .folder-icon { color: #0366d6; }
-              .article-list { list-style-type: none; padding: 0; }
-              .article-item { margin-bottom: 10px; }
-              .article-date { color: #666; font-size: 0.9em; }
-              .folder-section { margin: 20px 0; }
-              .nav { margin-bottom: 20px; }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <h1><a href="{{ '/' | relative_url }}" style="text-decoration: none; color: inherit;">{{ site.title }}</a></h1>
-              <p>{{ site.description }}</p>
-            </div>
-            {{ content }}
-          </body>
-          </html>
-          EOL
           
           # 创建文章布局
           cat > _layouts/post.html <<EOL
           ---
           layout: default
           ---
-          <div class="nav">
-            <a href="{{ '/' | relative_url }}">← 返回首页</a>
+          <h1>{{ page.title }}</h1>
+          <p class="meta">发布日期: {{ page.date | date: "%Y-%m-%d" }}</p>
+          {% if page.path %}
+          <p class="path">文件路径: {{ page.path }}</p>
+          {% endif %}
+          <div class="post-content">
+            {{ content }}
           </div>
-          <article>
-            <h1>{{ page.title }}</h1>
-            <p class="meta">发布于 {{ page.date | date: "%Y-%m-%d" }} by {{ page.author }}</p>
-            {% if page.category %}
-            <p class="path">分类: {{ page.category }}</p>
-            {% endif %}
-            <div class="content">
-              {{ content }}
-            </div>
-          </article>
           EOL
           
           # 创建主页
           cat > index.md <<EOL
           ---
           layout: default
-          title: 文章列表
+          title: Articles | Collected Articles
           ---
           
-          ## 最近更新
+          # 文章列表
           
-          <ul class="article-list">
-          {% assign sorted_pages = site.pages | where: "layout", "post" | sort: "date" | reverse %}
-          {% for page in sorted_pages limit:5 %}
-            <li class="article-item">
-              <span class="article-date">{{ page.date | date: "%Y-%m-%d" }}</span>
-              <br>
-              <a href="{{ page.url | relative_url }}">{{ page.title }}</a>
-              {% if page.category %}
-              <br>
-              <small>📁 {{ page.category }}</small>
-              {% endif %}
-            </li>
+          {% assign sorted_pages = site.pages | sort: "date" | reverse %}
+          {% for page in sorted_pages %}
+            {% if page.layout == 'post' %}
+          * {{ page.date | date: "%Y-%m-%d" }} - [{{ page.title }}]({{ page.url | relative_url }})
+            <br><small>📁 {{ page.path }}</small>
+            {% endif %}
           {% endfor %}
-          </ul>
           
           ## 文件夹结构
           
-          {% assign folders = site.pages | map: "category" | uniq | sort %}
+          {% assign folders = site.pages | map: "path" | map: "dirname" | uniq | sort %}
           {% for folder in folders %}
-            {% unless folder == "" or folder == nil %}
-          <div class="folder-section">
-            <h3><span class="folder-icon">📁</span> {{ folder }}</h3>
-            <ul class="article-list">
-              {% assign folder_pages = site.pages | where: "category", folder | sort: "date" | reverse %}
-              {% for page in folder_pages %}
-                {% if page.layout == "post" %}
-                <li class="article-item">
-                  <span class="article-date">{{ page.date | date: "%Y-%m-%d" }}</span>
-                  <br>
-                  <a href="{{ page.url | relative_url }}">{{ page.title }}</a>
-                </li>
-                {% endif %}
-              {% endfor %}
-            </ul>
-          </div>
+            {% unless folder == "" or folder == "." or folder contains "layouts" %}
+          ### 📁 {{ folder }}
+            {% assign folder_pages = site.pages | where_exp: "item", "item.path contains folder" %}
+            {% for page in folder_pages %}
+              {% if page.layout == 'post' %}
+          * {{ page.date | date: "%Y-%m-%d" }} - [{{ page.title }}]({{ page.url | relative_url }})
+              {% endif %}
+            {% endfor %}
             {% endunless %}
           {% endfor %}
-          
-          ## 未分类文章
-          
-          <ul class="article-list">
-          {% assign uncategorized_pages = site.pages | where: "layout", "post" | where: "category", nil | sort: "date" | reverse %}
-          {% for page in uncategorized_pages %}
-            <li class="article-item">
-              <span class="article-date">{{ page.date | date: "%Y-%m-%d" }}</span>
-              <br>
-              <a href="{{ page.url | relative_url }}">{{ page.title }}</a>
-            </li>
-          {% endfor %}
-          </ul>
           EOL
+
+      - name: Install Dependencies
+        run: |
+          bundle install
 
       - name: Build with Jekyll
         run: |
-          bundle init
-          bundle add jekyll
           bundle exec jekyll build
         env:
           JEKYLL_ENV: production
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
 
