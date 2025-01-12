@@ -1,24 +1,19 @@
 name: Deploy Hugo site to Pages
 
 on:
-  # 在添加前置数据的工作流完成后触发
   workflow_run:
     workflows: ["Add YAML Front Matter"]
     types:
       - completed
-  # 允许手动触发
   workflow_dispatch:
-  # 在推送到主分支时触发
   push:
     branches: ["main"]
 
-# 设置 GITHUB_TOKEN 的权限
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# 允许一个并发部署
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -37,8 +32,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # 获取完整的 git 历史用于最后修改时间
-      
+          fetch-depth: 0
+
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v4
@@ -67,38 +62,144 @@ jobs:
           # 下载并设置主题
           git clone https://github.com/nanxiaobei/hugo-paper themes/paper
           
+          # 创建自定义主页模板
+          mkdir -p layouts
+          cat > layouts/index.html <<EOL
+          {{ define "main" }}
+          <article class="post-single">
+            <header class="post-header">
+              <h1 class="post-title">文章档案</h1>
+            </header>
+            
+            <div class="post-content">
+              <!-- 按文件夹结构显示文章 -->
+              {{ \$pages := .Site.RegularPages }}
+              {{ \$sections := slice }}
+              {{ range \$pages }}
+                {{ \$section := path.Dir .File.Path }}
+                {{ if not (in \$sections \$section) }}
+                  {{ \$sections = \$sections | append \$section }}
+                {{ end }}
+              {{ end }}
+              
+              <div class="folder-structure">
+                {{ range sort \$sections }}
+                  {{ \$section := . }}
+                  <div class="folder">
+                    <h2>📁 {{ if eq . "posts" }}根目录{{ else }}{{ . }}{{ end }}</h2>
+                    <ul>
+                      {{ range sort (\$pages.ByDate.Reverse) }}
+                        {{ if eq (path.Dir .File.Path) \$section }}
+                          <li>
+                            <time>{{ .Date.Format "2006-01-02" }}</time>
+                            <a href="{{ .Permalink }}">{{ .Title }}</a>
+                          </li>
+                        {{ end }}
+                      {{ end }}
+                    </ul>
+                  </div>
+                {{ end }}
+              </div>
+              
+              <h2>最近更新</h2>
+              <ul>
+                {{ range first 10 (where .Site.RegularPages.ByLastmod.Reverse ".Type" "posts") }}
+                <li>
+                  <time>{{ .Lastmod.Format "2006-01-02" }}</time>
+                  <a href="{{ .Permalink }}">{{ .Title }}</a>
+                  <small>({{ path.Dir .File.Path }})</small>
+                </li>
+                {{ end }}
+              </ul>
+            </div>
+          </article>
+          
+          <style>
+          .folder-structure {
+            margin: 2rem 0;
+          }
+          .folder {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+          }
+          .folder h2 {
+            margin-top: 0;
+            color: #495057;
+          }
+          .folder ul {
+            list-style: none;
+            padding-left: 1rem;
+          }
+          .folder li {
+            margin: 0.5rem 0;
+            display: flex;
+            align-items: baseline;
+          }
+          .folder time {
+            color: #868e96;
+            margin-right: 1rem;
+            font-family: monospace;
+          }
+          small {
+            color: #868e96;
+            margin-left: 0.5rem;
+          }
+          </style>
+          {{ end }}
+          EOL
+          
           # 创建 archetypes 模板
           mkdir -p archetypes
           cat > archetypes/default.md <<EOL
           ---
           title: "{{ replace .Name "-" " " | title }}"
           date: {{ .Date }}
+          lastmod: {{ .Date }}
           categories: []
           tags: []
           draft: false
           ---
           EOL
           
-          # 创建内容目录
-          mkdir -p content/posts
+          # 创建内容目录结构
+          mkdir -p content
           
-          # 移动所有 markdown 文件到 content/posts
-          find . -name "*.md" -not -path "./themes/*" -not -path "./archetypes/*" -not -path "./content/*" -exec mv {} content/posts/ \;
-          
-          # 修正 front matter
-          for file in content/posts/*.md; do
+          # 移动并组织 Markdown 文件
+          find . -name "*.md" -not -path "./themes/*" -not -path "./archetypes/*" -not -path "./content/*" -not -path "./layouts/*" | while read file; do
+            # 获取相对路径
+            rel_path=${file#./}
+            dir_path=$(dirname "$rel_path")
+            
+            # 如果不是在根目录，创建对应的内容目录
+            if [ "$dir_path" != "." ]; then
+              mkdir -p "content/$dir_path"
+              target_path="content/$rel_path"
+            else
+              target_path="content/posts/$(basename "$rel_path")"
+            fi
+            
+            # 移动文件并添加/更新前置数据
             if [ -f "$file" ]; then
+              title=$(basename "$file" .md)
+              date=$(git log -1 --format=%aI -- "$file")
+              lastmod=$(git log -1 --format=%aI -- "$file")
+              
               # 如果文件没有 front matter，添加它
               if ! grep -q "^---" "$file"; then
-                title=$(basename "$file" .md)
-                date=$(git log -1 --format=%aI -- "$file")
                 temp_file=$(mktemp)
                 echo "---" > "$temp_file"
                 echo "title: \"$title\"" >> "$temp_file"
                 echo "date: $date" >> "$temp_file"
+                echo "lastmod: $lastmod" >> "$temp_file"
                 echo "---" >> "$temp_file"
                 cat "$file" >> "$temp_file"
-                mv "$temp_file" "$file"
+                mkdir -p $(dirname "$target_path")
+                mv "$temp_file" "$target_path"
+              else
+                mkdir -p $(dirname "$target_path")
+                mv "$file" "$target_path"
               fi
             fi
           done
