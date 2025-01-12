@@ -38,7 +38,7 @@ jobs:
         run: |
           # 创建 Hugo 站点配置
           cat > config.toml <<EOL
-          baseURL = 'https://protomyst.github.io/Articles/'
+          baseURL = 'https://doc.protomyst.com/'
           languageCode = 'zh-cn'
           title = 'Articles'
           theme = 'paper'
