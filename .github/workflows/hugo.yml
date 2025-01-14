@@ -1,7 +1,12 @@
 name: Deploy Hugo site to Pages
 
 on:
+  # 手动触发
   workflow_dispatch:
+  # 每天2点触发（使用UTC时间）
+  schedule:
+    - cron: '0 2 * * *'
+  # 推送触发
   push:
     branches: ["main"]
 
@@ -29,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0    # 获取完整的 git 历史用于最后修改时间
-
+      
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v4
@@ -46,7 +51,6 @@ jobs:
           [params]
             github = 'Protomyst'
             rss = true
-            color = 'linen'
             
           [taxonomies]
             category = 'categories'
@@ -54,90 +58,92 @@ jobs:
             
           [markup.goldmark.renderer]
             unsafe = true
+            
+          # 启用搜索所需的 JSON 输出
+          [outputs]
+            home = ["HTML", "RSS", "JSON"]
+            section = ["HTML", "RSS"]
+            
+          # 配置归档
+          [permalinks]
+            posts = "/posts/:sections/:filename/"
           EOL
           
           # 下载并设置主题
           git clone https://github.com/nanxiaobei/hugo-paper themes/paper
           
-          # 创建自定义主页模板
-          mkdir -p layouts
-          cat > layouts/index.html <<EOL
+          # 创建搜索页面
+          mkdir -p layouts/_default
+          cat > layouts/_default/search.html <<EOL
           {{ define "main" }}
-          <article class="post-single">
-            <div class="post-content">
-              <!-- 按文件夹结构显示文章 -->
-              {{ \$pages := .Site.RegularPages }}
-              {{ \$sections := slice }}
-              {{ range \$pages }}
-                {{ \$section := path.Dir .File.Path }}
-                {{ if and (ne \$section ".") (ne \$section "posts") }}
-                  {{ if not (in \$sections \$section) }}
-                    {{ \$sections = \$sections | append \$section }}
-                  {{ end }}
-                {{ end }}
-              {{ end }}
+          <div id="search-container">
+            <input type="text" id="search-input" placeholder="搜索文章...">
+            <div id="search-results"></div>
+          </div>
+          <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+          <script>
+            document.addEventListener('DOMContentLoaded', function() {
+              const searchInput = document.getElementById('search-input');
+              const searchResults = document.getElementById('search-results');
               
-              <!-- 首先显示根目录文章 -->
-              {{ \$rootPages := where \$pages "File.Dir" "posts/" }}
-              {{ if \$rootPages }}
-              <div class="folder">
-                <ul>
-                  {{ range sort \$rootPages "Title" }}
-                    <li>
-                      <a href="{{ .Permalink }}">{{ .Title }}</a>
-                    </li>
-                  {{ end }}
-                </ul>
-              </div>
-              {{ end }}
-              
-              <!-- 然后显示其他文件夹 -->
-              {{ range sort \$sections }}
-                {{ \$section := . }}
-                <div class="folder">
-                  <h3>📁 {{ . }}</h3>
-                  <ul>
-                    {{ range sort (\$pages.ByTitle) }}
-                      {{ if eq (path.Dir .File.Path) \$section }}
-                        <li>
-                          <a href="{{ .Permalink }}">{{ .Title }}</a>
-                        </li>
-                      {{ end }}
-                    {{ end }}
-                  </ul>
-                </div>
-              {{ end }}
-            </div>
-          </article>
+              fetch('/index.json')
+                .then(response => response.json())
+                .then(data => {
+                  const fuse = new Fuse(data, {
+                    keys: ['title', 'content', 'tags', 'categories'],
+                    threshold: 0.3,
+                    includeMatches: true
+                  });
+                  
+                  searchInput.addEventListener('input', () => {
+                    const query = searchInput.value;
+                    if (query.length >= 2) {
+                      const results = fuse.search(query);
+                      searchResults.innerHTML = results
+                        .map(result => \`
+                          <div class="search-result">
+                            <a href="\${result.item.permalink}">
+                              <h3>\${result.item.title}</h3>
+                              <p>\${result.item.summary || ''}</p>
+                            </a>
+                          </div>
+                        \`)
+                        .join('');
+                    } else {
+                      searchResults.innerHTML = '';
+                    }
+                  });
+                });
+            });
+          </script>
+          {{ end }}
+          EOL
           
-          <style>
-          .folder {
-            margin-bottom: 1.5rem;
-            border-radius: var(--radius);
-            background: var(--secondary);
-          }
-          .folder h3 {
-            margin: 0;
-            padding: 1rem;
-            font-size: 1.1rem;
-            border-bottom: 1px solid var(--border);
-          }
-          .folder ul {
-            list-style: none;
-            padding: 1rem;
-            margin: 0;
-          }
-          .folder li {
-            margin: 0.5rem 0;
-          }
-          .folder li a {
-            text-decoration: none;
-            color: var(--primary);
-          }
-          .folder li a:hover {
-            text-decoration: underline;
-          }
-          </style>
+          # 创建 index.json 模板
+          cat > layouts/_default/index.json <<EOL
+          {{- \$index := slice -}}
+          {{- range where .Site.RegularPages "Type" "not in" (slice "page" "archive") -}}
+              {{- \$index = \$index | append (dict "title" .Title "permalink" .Permalink "content" .Plain "summary" .Summary "tags" .Params.tags "categories" .Params.categories) -}}
+          {{- end -}}
+          {{- \$index | jsonify -}}
+          EOL
+          
+          # 创建归档页面模板
+          mkdir -p layouts/_default
+          cat > layouts/_default/archives.html <<EOL
+          {{ define "main" }}
+          <h1>归档</h1>
+          {{ range .Site.Sections }}
+            <h2>{{ .Title }}</h2>
+            <ul>
+              {{ range .Pages }}
+                <li>
+                  <span>{{ .Date.Format "2006-01-02" }}</span>
+                  <a href="{{ .Permalink }}">{{ .Title }}</a>
+                </li>
+              {{ end }}
+            </ul>
+          {{ end }}
           {{ end }}
           EOL
           
@@ -147,7 +153,6 @@ jobs:
           ---
           title: "{{ replace .Name "-" " " | title }}"
           date: {{ .Date }}
-          lastmod: {{ .Date }}
           categories: []
           tags: []
           draft: false
@@ -155,45 +160,50 @@ jobs:
           EOL
           
           # 创建内容目录结构
-          mkdir -p content
+          mkdir -p content/posts
           
-          # 移动并组织 Markdown 文件
-          find . -name "*.md" -not -path "./themes/*" -not -path "./archetypes/*" -not -path "./content/*" -not -path "./layouts/*" | while read file; do
-            # 获取相对路径
-            rel_path=${file#./}
-            dir_path=$(dirname "$rel_path")
-            
-            # 如果不是在根目录，创建对应的内容目录
-            if [ "$dir_path" != "." ]; then
-              mkdir -p "content/$dir_path"
-              target_path="content/$rel_path"
+          # 移动所有 markdown 文件到对应的文件夹，排除 README.md
+          find . -name "*.md" -not -name "README.md" -not -path "./themes/*" -not -path "./archetypes/*" -not -path "./content/*" | while read file; do
+            # 获取文件所在目录作为分类
+            dir=$(dirname "$file")
+            if [ "$dir" = "." ]; then
+              dir="uncategorized"
             else
-              target_path="content/posts/$(basename "$rel_path")"
+              dir=$(basename "$dir")
             fi
             
-            # 移动文件并添加/更新前置数据
+            # 创建目标目录
+            mkdir -p "content/posts/$dir"
+            
+            # 移动文件并添加 front matter（如果需要）
             if [ -f "$file" ]; then
-              title=$(basename "$file" .md)
-              date=$(git log -1 --format=%aI -- "$file")
-              lastmod=$(git log -1 --format=%aI -- "$file")
-              
-              # 如果文件没有 front matter，添加它
+              filename=$(basename "$file")
               if ! grep -q "^---" "$file"; then
+                title=$(basename "$file" .md)
+                date=$(git log -1 --format=%aI -- "$file")
                 temp_file=$(mktemp)
                 echo "---" > "$temp_file"
                 echo "title: \"$title\"" >> "$temp_file"
                 echo "date: $date" >> "$temp_file"
-                echo "lastmod: $lastmod" >> "$temp_file"
+                echo "categories: [\"$dir\"]" >> "$temp_file"
                 echo "---" >> "$temp_file"
                 cat "$file" >> "$temp_file"
-                mkdir -p $(dirname "$target_path")
-                mv "$temp_file" "$target_path"
+                mv "$temp_file" "content/posts/$dir/$filename"
               else
-                mkdir -p $(dirname "$target_path")
-                mv "$file" "$target_path"
+                mv "$file" "content/posts/$dir/$filename"
               fi
             fi
           done
+          
+          # 创建归档入口页面
+          cat > content/archives.md <<EOL
+          ---
+          title: "归档"
+          layout: "archives"
+          url: "/archives"
+          summary: archives
+          ---
+          EOL
 
       - name: Build with Hugo
         env:
