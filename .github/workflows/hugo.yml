@@ -52,6 +52,13 @@ jobs:
             github = 'Protomyst'
             rss = true
             
+          [menu]
+            main = [
+              { identifier = "search", name = "搜索", url = "/search/", weight = 10 },
+              { identifier = "categories", name = "分类", url = "/categories/", weight = 20 },
+              { identifier = "archives", name = "归档", url = "/archives/", weight = 30 }
+            ]
+            
           [taxonomies]
             category = 'categories'
             tag = 'tags'
@@ -63,16 +70,21 @@ jobs:
           [outputs]
             home = ["HTML", "RSS", "JSON"]
             section = ["HTML", "RSS"]
-            
-          # 配置归档
-          [permalinks]
-            posts = "/posts/:sections/:filename/"
           EOL
           
           # 下载并设置主题
           git clone https://github.com/nanxiaobei/hugo-paper themes/paper
           
           # 创建搜索页面
+          mkdir -p content/search
+          cat > content/search/_index.md <<EOL
+          ---
+          title: "搜索"
+          layout: "search"
+          ---
+          EOL
+          
+          # 创建搜索页面模板
           mkdir -p layouts/_default
           cat > layouts/_default/search.html <<EOL
           {{ define "main" }}
@@ -116,20 +128,39 @@ jobs:
                 });
             });
           </script>
+          <style>
+            #search-container {
+              margin: 20px 0;
+            }
+            #search-input {
+              width: 100%;
+              padding: 10px;
+              font-size: 16px;
+              border: 1px solid #ddd;
+              border-radius: 4px;
+            }
+            .search-result {
+              margin: 20px 0;
+              padding: 10px;
+              border-bottom: 1px solid #eee;
+            }
+            .search-result h3 {
+              margin: 0 0 10px 0;
+            }
+          </style>
           {{ end }}
           EOL
           
           # 创建 index.json 模板
           cat > layouts/_default/index.json <<EOL
           {{- \$index := slice -}}
-          {{- range where .Site.RegularPages "Type" "not in" (slice "page" "archive") -}}
+          {{- range .Site.RegularPages -}}
               {{- \$index = \$index | append (dict "title" .Title "permalink" .Permalink "content" .Plain "summary" .Summary "tags" .Params.tags "categories" .Params.categories) -}}
           {{- end -}}
           {{- \$index | jsonify -}}
           EOL
           
           # 创建归档页面模板
-          mkdir -p layouts/_default
           cat > layouts/_default/archives.html <<EOL
           {{ define "main" }}
           <h1>归档</h1>
@@ -140,6 +171,13 @@ jobs:
                 <li>
                   <span>{{ .Date.Format "2006-01-02" }}</span>
                   <a href="{{ .Permalink }}">{{ .Title }}</a>
+                  {{ if .Params.categories }}
+                  <span class="categories">
+                    [{{ range .Params.categories }}
+                      <a href="/categories/{{ . | urlize }}">{{ . }}</a>
+                    {{ end }}]
+                  </span>
+                  {{ end }}
                 </li>
               {{ end }}
             </ul>
@@ -190,7 +228,25 @@ jobs:
                 cat "$file" >> "$temp_file"
                 mv "$temp_file" "content/posts/$dir/$filename"
               else
-                mv "$file" "content/posts/$dir/$filename"
+                # 如果已有 front matter，检查并添加分类
+                temp_file=$(mktemp)
+                awk -v dir="$dir" '
+                BEGIN { in_front_matter=0; categories_found=0; }
+                /^---$/ {
+                  if (in_front_matter) {
+                    if (!categories_found) print "categories: [\"" dir "\"]"
+                    in_front_matter=0
+                  } else {
+                    in_front_matter=1
+                  }
+                  print
+                  next
+                }
+                in_front_matter && /^categories:/ {
+                  categories_found=1
+                }
+                { print }' "$file" > "$temp_file"
+                mv "$temp_file" "content/posts/$dir/$filename"
               fi
             fi
           done
