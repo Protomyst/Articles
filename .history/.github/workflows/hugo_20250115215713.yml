@@ -39,7 +39,7 @@ jobs:
       - name: Create Hugo Config
         run: |
           cat > config.yml << 'EOL'
-          baseURL: 'https://doc.protomyst.com/'
+          baseURL: 'https://doc.protomyyst/'
           languageCode: 'en-us'
           title: 'My Blog'
           theme: 'PaperMod'
