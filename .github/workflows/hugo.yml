@@ -1,20 +1,23 @@
 name: Deploy Hugo site to Pages
 
+# 触发条件
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]  # 当main分支收到推送时触发
   schedule:
-    - cron: '0 2 * * *'  # Run at 2 AM UTC daily
-  workflow_dispatch:      # Manual trigger
+    - cron: '0 2 * * *'  # 每天UTC时间2点（北京时间10点）自动运行
+  workflow_dispatch:      # 支持手动触发
 
+# 所需权限
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: read        # 仓库内容读取权限
+  pages: write         # GitHub Pages写入权限
+  id-token: write      # 身份令牌写入权限
 
+# 并发控制
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "pages"       # 并发组名称
+  cancel-in-progress: false  # 不取消正在进行的工作流
 
 jobs:
   build-deploy:
@@ -24,31 +27,28 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     
     steps:
+      # 检出代码
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          submodules: 'recursive'  # 递归克隆子模块
 
+      # 设置Hugo环境
       - name: Setup Hugo
         uses: peaceiris/actions-hugo@v2
         with:
-          hugo-version: 'latest'
-          extended: true
+          hugo-version: 'latest'   # 使用最新版本的Hugo
+          extended: true           # 使用Hugo扩展版
 
+      # 配置GitHub Pages
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
+      # 下载Hugo主题
       - name: Download PaperMod theme
         run: |
           mkdir -p themes
           git clone https://github.com/adityatelange/hugo-PaperMod.git themes/PaperMod
-
-      - name: Generate Front Matter and Process Files
-        run: |
-          # Create content directories if they don't exist
-          mkdir -p content
-
-          # Function to generate front matter
           generate_front_matter() {
             local file="$1"
             local title=$(basename "$file" .md)
