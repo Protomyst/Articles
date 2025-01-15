@@ -83,8 +83,8 @@ jobs:
         run: |
           cat > config.toml << EOL
           baseURL = "https://doc.protomyst.com"
-          languageCode = "en-us"
-          title = "My Blog"
+          languageCode = "zh-cn"
+            title = "${{ github.repository_owner }}'s Space"
           theme = "PaperMod"
           
           # 启用搜索所需的输出
@@ -94,7 +94,7 @@ jobs:
           [params]
             defaultTheme = "auto"
             ShowReadingTime = true
-            ShowShareButtons = true
+            ShowShareButtons = false
             ShowPostNavLinks = true
             ShowBreadCrumbs = true
             ShowCodeCopyButtons = true
@@ -102,13 +102,13 @@ jobs:
             
             # 添加首页信息
             [params.homeInfoParams]
-              Title = "欢迎来到我的技术博客"
-              Content = "这里记录着我的技术笔记和心得体会"
+              Title = "欢迎来到${{ github.repository_owner }}的文档站"
+              Content = "在喧嚣时代中静心思考，用文字传递理性与希望。"
             
             # 可以添加社交媒体链接
             [[params.socialIcons]]
               name = "github"
-              url = "https://github.com/YourUsername"
+              url = "https://github.com/${{ github.repository_owner }}"
           
           [menu]
             main = [
