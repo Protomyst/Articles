@@ -101,43 +101,43 @@ jobs:
       - name: Create Hugo config
         run: |
           cat <<EOT > config.yml
-          baseURL: "https://doc.protomyst.com/"
-          title: "Articles"
-          languageCode: "zh-cn"
-          # 如果你要显示中文时间，可设置为 "zh-cn" 并在 PaperMod config 中做相应调整
+  baseURL: "https://doc.protomyst.com/"
+  title: "Articles"
+  languageCode: "zh-cn"
+  # 如果你要显示中文时间，可设置为 "zh-cn" 并在 PaperMod config 中做相应调整
 
-          theme: "PaperMod"
+  theme: "PaperMod"
 
-          # 不需要生成的页面类型可以禁用
-          disableKinds:
-            - RSS
-            - sitemap
-            - taxonomy
-            - taxonomyTerm
+  # 不需要生成的页面类型可以禁用
+  disableKinds:
+    - RSS
+    - sitemap
+    - taxonomy
+    - taxonomyTerm
 
-          # 菜单：主页上显示归档和搜索按钮
-          menu:
-            main:
-              - name: "Archives"
-                url: "/archives"
-                weight: 1
-              - name: "Search"
-                url: "/search"
-                weight: 2
+  # 菜单：主页上显示归档和搜索按钮
+  menu:
+    main:
+      - name: "Archives"
+        url: "/archives"
+        weight: 1
+      - name: "Search"
+        url: "/search"
+        weight: 2
 
-          # PaperMod 专属配置
-          params:
-            env: "production"
-            # 启用搜索
-            enableSearch: true
+  # PaperMod 专属配置
+  params:
+    env: "production"
+    # 启用搜索
+    enableSearch: true
 
-            # 其他可选设置
-            ShowReadingTime: false
-            ShowShareButtons: true
-            ShowPostNavLinks: true
+    # 其他可选设置
+    ShowReadingTime: false
+    ShowShareButtons: true
+    ShowPostNavLinks: true
 
-          # 主题相关配置请参考 PaperMod 文档可自行添加
-          EOT
+  # 主题相关配置请参考 PaperMod 文档可自行添加
+  EOT
 
       # 6. 构建 Hugo 站点
       - name: Build with Hugo
