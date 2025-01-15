@@ -87,6 +87,10 @@ jobs:
           title = "My Blog"
           theme = "PaperMod"
           
+          # 启用搜索所需的输出
+          [outputs]
+            home = ["HTML", "RSS", "JSON"]
+          
           [params]
             defaultTheme = "auto"
             ShowReadingTime = true
@@ -96,11 +100,46 @@ jobs:
             ShowCodeCopyButtons = true
             ShowToc = true
             
+            # 添加首页信息
+            [params.homeInfoParams]
+              Title = "欢迎来到我的技术博客"
+              Content = "这里记录着我的技术笔记和心得体会"
+            
+            # 可以添加社交媒体链接
+            [[params.socialIcons]]
+              name = "github"
+              url = "https://github.com/YourUsername"
+          
           [menu]
             main = [
               {identifier = "archives", name = "Archives", url = "/archives/", weight = 10},
-              {identifier = "categories", name = "Categories", url = "/categories/", weight = 20}
+              {identifier = "categories", name = "Categories", url = "/categories/", weight = 20},
+              {identifier = "search", name = "Search", url = "/search/", weight = 30},
+              {identifier = "tags", name = "Tags", url = "/tags/", weight = 40}
             ]
+          EOL
+
+          # 创建必要的页面
+          mkdir -p content
+          
+          # 创建搜索页面
+          cat > content/search.md << EOL
+          ---
+          title: "Search"
+          layout: "search"
+          summary: "search"
+          placeholder: "搜索文章..."
+          ---
+          EOL
+          
+          # 创建归档页面
+          cat > content/archives.md << EOL
+          ---
+          title: "Archives"
+          layout: "archives"
+          url: "/archives/"
+          summary: "archives"
+          ---
           EOL
 
       - name: Build site
