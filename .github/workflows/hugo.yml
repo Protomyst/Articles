@@ -102,7 +102,7 @@ jobs:
             
             # 添加首页信息
             [params.homeInfoParams]
-              Title = "欢迎来到${{ github.repository_owner }}的文档站"
+              Title = "欢迎来到 ${{ github.repository_owner }} 的文档站"
               Content = "在喧嚣时代中静心思考，用文字传递理性与希望。"
             
             # 可以添加社交媒体链接
