@@ -1,19 +1,19 @@
 name: Deploy Hugo site to Pages
 
 on:
-  # 推送到 main 分支时触发
+  # 在推送到 main 分支时触发
   push:
     branches: ["main"]
   # 每天凌晨 2 点触发
   schedule:
     - cron: "0 2 * * *"
-  # 手动触发
+  # 允许手动触发
   workflow_dispatch:
 
 permissions:
-  contents: read      # 读取仓库内容
-  pages: write        # 写入 GitHub Pages
-  id-token: write     # OIDC 授权，GitHub Pages需要
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: "pages"
@@ -23,7 +23,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      HUGO_VERSION: 0.121.1   # 指定所需 Hugo 版本（可改）
+      HUGO_VERSION: 0.121.1
     steps:
       #-----------------------------
       # 1. 安装 Hugo
@@ -40,7 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 获取完整 git 提交历史（便于获取最后修改时间等）
+          fetch-depth: 0  # 获取完整的 git 历史 (便于获取最后修改时间等)
 
       #-----------------------------
       # 3. 配置 GitHub Pages
@@ -51,18 +51,16 @@ jobs:
 
       #-----------------------------
       # 4. 初始化 Hugo 站点
-      #   - 创建 config.toml
-      #   - 创建主题 & 模板
-      #   - 创建 list.json.json (自定义生成索引)
-      #   - 创建一个含搜索逻辑的 header.html
+      #   - 创建 config.toml (baseURL 改为 doc.protomyst.com)
+      #   - 下载主题 & 创建 archetypes
+      #   - 创建 list.json.json (去掉 “:=” 短变量声明，避免 parse 错误)
+      #   - 创建 header.html (搜索 & 归档按钮, Fuse.js via CDN)
       #-----------------------------
       - name: Init Hugo Site
         run: |
-          #-------------------------
+          #-----------------------------------------------------------------
           # 4.1 创建 config.toml
-          # baseURL 改为 doc.protomyst.com
-          # 并开启首页同时输出 JSON
-          #-------------------------
+          #-----------------------------------------------------------------
           mkdir -p ./config
           cat > ./config/config.toml <<EOL
           baseURL = 'doc.protomyst.com'
@@ -81,21 +79,20 @@ jobs:
           [markup.goldmark.renderer]
             unsafe = true
 
+          # 主页同时输出 HTML 和 JSON (index.json)
           [outputs]
-            home = ["HTML", "JSON"]  # 主页同时输出 HTML 和 JSON (index.json)
+            home = ["HTML", "JSON"]
           EOL
 
-          #-------------------------
-          # 4.2 下载并应用 Hugo Paper 主题
-          #    若本地已有主题则可省略
-          #-------------------------
+          #-----------------------------------------------------------------
+          # 4.2 下载并应用主题 (nanxiaobei/hugo-paper)
+          #-----------------------------------------------------------------
           rm -rf themes/paper
           git clone https://github.com/nanxiaobei/hugo-paper themes/paper
 
-          #-------------------------
+          #-----------------------------------------------------------------
           # 4.3 创建 archetypes/default.md
-          #    用于新文章的默认 Front Matter
-          #-------------------------
+          #-----------------------------------------------------------------
           mkdir -p archetypes
           cat > archetypes/default.md <<EOL
           ---
@@ -107,17 +104,24 @@ jobs:
           ---
           EOL
 
-          #-------------------------
+          #-----------------------------------------------------------------
           # 4.4 创建 layouts/_default/list.json.json
-          #    自定义 JSON 输出：包含 title/url/summary/content/date
-          #-------------------------
+          #     重点：去掉 “:=” 写法，改用一个 $first 初始化 false
+          #-----------------------------------------------------------------
           mkdir -p layouts/_default
-          cat > layouts/_default/list.json.json <<EOL
-          {{- $first := true -}}
+          cat > layouts/_default/list.json.json <<'EOL'
+          {{/* 
+            Hugo 会用此模板生成 /index.json
+            避免使用 :=，改为常规赋值
+          */}}
+          {{ $first := false }}
           [
-          {{- range .Data.Pages -}}
-            {{- if not $first -}},{{- end -}}
-            {{- $first = false -}}
+          {{ range .Data.Pages -}}
+            {{- if not $first -}}
+              {{- $first = true -}}
+            {{- else -}}
+              ,
+            {{- end -}}
             {
               "title": {{ .Title | jsonify }},
               "url": {{ .Permalink | jsonify }},
@@ -125,39 +129,35 @@ jobs:
               "content": {{ .Plain | replace "\n" " " | jsonify }},
               "date": "{{ .Date }}"
             }
-          {{- end -}}
+          {{ end }}
           ]
           EOL
 
-          #-------------------------
-          # 4.5 为演示方便：覆盖/创建头部模板
-          #    在 header.html 中插入「搜索 & 归档」按钮，并通过 CDN 引入 Fuse.js
-          #    也可以放到其他 partials 里
-          #-------------------------
+          #-----------------------------------------------------------------
+          # 4.5 在主题里创建/覆盖一个简单 header.html
+          #     里边插入「搜索 & 归档」按钮
+          #     通过 CDN 引入 Fuse.js
+          #-----------------------------------------------------------------
           mkdir -p themes/paper/layouts/partials
           cat > themes/paper/layouts/partials/header.html <<'EOF'
           {{/* 
-            示例 header.html: 
-            - 导航栏上有「归档」和「搜索」按钮 
-            - 点击搜索按钮，展示搜索框 
-            - 使用 fuse.js (CDN) 在前端完成模糊搜索 
+            简化示例, header.html:
+            - 展示 “首页 / 归档 / 搜索” 
+            - Fuse.js 搜索 (CDN)
           */}}
-
           <header>
-            <!-- 如果 Paper 主题原本就有 <header>，你需要根据实际结构做出合并，这里仅作示例 -->
             <nav>
               <a href="/">首页</a>
               <a href="/archives">归档</a>
               <a href="#" onclick="toggleSearch()">搜索</a>
             </nav>
-            
             <div id="search-container" style="display:none;">
               <input type="text" id="search-input" placeholder="输入关键字..." />
               <div id="search-results"></div>
             </div>
           </header>
 
-          <!-- JS: 切换搜索框显示/隐藏 -->
+          <!-- 显示/隐藏搜索框 -->
           <script>
           function toggleSearch() {
             const container = document.getElementById('search-container')
@@ -169,17 +169,14 @@ jobs:
           }
           </script>
 
-          <!-- CDN 引入 Fuse.js -->
+          <!-- 通过 CDN 引入 Fuse.js -->
           <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
 
-          <!-- 前端搜索逻辑 -->
+          <!-- 简单前端搜索逻辑 -->
           <script>
           document.addEventListener('DOMContentLoaded', function () {
             const searchInput = document.getElementById('search-input')
             const searchResults = document.getElementById('search-results')
-            // 由于 config.toml 中的 baseURL = doc.protomyst.com (假设根路径),
-            // 这里 /index.json 通常就能访问到. 
-            // 若你子路径部署, 需改为绝对/相对地址.
             const fuseIndexUrl = '/index.json'
             let fuse = null
 
@@ -229,19 +226,19 @@ jobs:
           })
           </script>
           EOF
-          
-          #-------------------------
-          # 4.6 创建 content/posts 文件夹
-          #-------------------------
+
+          #-----------------------------------------------------------------
+          # 4.6 创建内容目录
+          #-----------------------------------------------------------------
           mkdir -p content/posts
 
       #-----------------------------
-      # 5. 处理 Markdown 文件
-      #    - 忽略 README.md
-      #    - 提取所在文件夹, 写入 archive 字段
-      #    - 若无 Front Matter 则添加
-      #    - 若已有, 仅插入/更新 archive
-      #    - 移动到 content/posts/
+      # 5. 处理 Markdown 文件：
+      #   - 忽略 README.md
+      #   - 若无 Front Matter 则添加
+      #   - 若已有 Front Matter 则只更新 archive 字段
+      #   - 目录名称 => archive 字段
+      #   - 移动到 content/posts/
       #-----------------------------
       - name: Process Markdown Files
         run: |
@@ -252,7 +249,7 @@ jobs:
                         -not -path "./content/*" \
                         -not -name "README.md"); do
 
-            # 获取相对路径和文件夹名
+            # 获取相对路径 & 文件夹名
             relative_path="${file#./}"
             folder_path="$(dirname "$relative_path")"
             folder_name="$(basename "$folder_path")"
@@ -261,9 +258,9 @@ jobs:
               folder_name="root"
             fi
 
-            # 检查是否存在 Front Matter
+            # 检查 Front Matter
             if grep -q "^---" "$file"; then
-              # 已有 Front Matter -> 只更新 archive 字段
+              # 已有 Front Matter -> 更新 archive
               temp_file=$(mktemp)
               in_front_matter=false
               archive_field_added=false
@@ -309,22 +306,24 @@ jobs:
               mv "$temp_file" "$file"
             fi
 
-            # 最后移动文件到 content/posts
+            # 移动文件到 content/posts/
             mv "$file" content/posts/
           done
 
       #-----------------------------
-      # 6. Hugo 构建 (生成 public/)
-      #   - 会生成 index.json
+      # 6. Hugo 构建
+      #   - 使用 --config ./config/config.toml
+      #   - --gc, --minify
       #-----------------------------
       - name: Build with Hugo
         env:
           HUGO_ENVIRONMENT: production
           HUGO_ENV: production
-        run: hugo --gc --minify --config ./config/config.toml
+        run: |
+          hugo --gc --minify --config ./config/config.toml
 
       #-----------------------------
-      # 7. 上传构建产物 (public/)
+      # 7. 上传构建成果 (./public)
       #-----------------------------
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
