@@ -1,12 +1,12 @@
 name: Deploy Hugo site to Pages
 
 on:
-  # 在推送到主分支时触发
+  # 在推送到 main 分支时触发
   push:
     branches: ["main"]
-  # 每天凌晨2点触发
+  # 每天 2 点定时触发（UTC 时间 2:00，如需北京时间 2:00 则要改成 cron: "0 18 * * *"）
   schedule:
-    - cron: '0 18 * * *' # UTC时间18点，北京时间凌晨2点
+    - cron: "0 2 * * *"
   # 允许手动触发
   workflow_dispatch:
 
@@ -30,7 +30,7 @@ jobs:
       - name: Install Hugo CLI
         run: |
           wget -O ${{ runner.temp }}/hugo.deb https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb \
-          && sudo dpkg -i ${{ runner.temp }}/hugo.deb          
+          && sudo dpkg -i ${{ runner.temp }}/hugo.deb
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,31 +45,41 @@ jobs:
         run: |
           # 创建 Hugo 站点配置
           cat > config.toml <<EOL
-          baseURL = 'https://doc.protomyst.com/'
+          baseURL = 'https://protomyst.github.io/Articles/'
           languageCode = 'zh-cn'
           title = 'Articles'
           theme = 'paper'
           
+          # 下面的参数仅作示例，需要在主题里自行实现或适配搜索 / 归档
           [params]
             github = 'Protomyst'
             rss = true
-            # 启用搜索
-            enableSearch = true
-            # 主页显示搜索和归档按钮
-            homeInfoParams = ["posts", "archives", "search"]
+            # 你可以在主题中使用这些开关来控制“搜索”和“归档”按钮的显示
+            showSearch = true
+            showArchive = true
 
           [taxonomies]
             category = 'categories'
             tag = 'tags'
-            # 增加归档
-            archive = 'archives'
-            
+            # 如果想单独设置 folder 作为自定义分类，则可在此添加
+            # folder = 'folders'
+
           [markup.goldmark.renderer]
             unsafe = true
 
-          # 搜索配置 (fuse.js)
-          [outputs]
-            home = [ "HTML", "RSS", "JSON" ]
+          # 示例：在主菜单添加“搜索”和“归档”按钮
+          [menu]
+            [[menu.main]]
+              identifier = "archive"
+              name = "归档"
+              url = "/archives"
+              weight = 1
+
+            [[menu.main]]
+              identifier = "search"
+              name = "搜索"
+              url = "/search"
+              weight = 2
           EOL
           
           # 下载并设置主题
@@ -87,43 +97,48 @@ jobs:
           ---
           EOL
           
-          cat > archetypes/archives.md <<EOL
-          ---
-          title: "Archives"
-          layout: "archives"
-          summary: "archives"
-          ---
-          EOL
-          
           # 创建内容目录
           mkdir -p content/posts
-          
-          # 移动所有 markdown 文件到 content/posts
-          find . -name "*.md" -not -path "./themes/*" -not -path "./archetypes/*" -not -path "./content/*" -not -name "README.md" -exec mv {} content/posts/ \;
-          
-          # 修正 front matter
+
+          # 移动除 README.md 之外的所有 markdown 文件到 content/posts
+          find . -type f -iname "*.md" \
+            ! -iname "README.md" \
+            -not -path "./themes/*" \
+            -not -path "./archetypes/*" \
+            -not -path "./content/*" \
+            -exec mv {} content/posts/ \;
+
+          # 修正 front matter，并按文件夹名称创建归档（示例：将文件夹名加入到 categories 中）
           for file in content/posts/*.md; do
             if [ -f "$file" ]; then
+              # 获取相对路径和所在文件夹作为分类
+              dir_name=$(dirname "$file")
+              # dir_name 通常是 content/posts/xxx ... 取最后一段 xxx
+              folder=$(basename "$dir_name")
+
               # 如果文件没有 front matter，添加它
               if ! grep -q "^---" "$file"; then
                 title=$(basename "$file" .md)
                 date=$(git log -1 --format=%aI -- "$file")
-                folder=$(basename $(dirname "$file"))
                 temp_file=$(mktemp)
+
                 echo "---" > "$temp_file"
                 echo "title: \"$title\"" >> "$temp_file"
                 echo "date: $date" >> "$temp_file"
-                # 将文件夹名称添加到 archives
-                echo "archives: [\"$folder\"]" >> "$temp_file"
+                # 将所在文件夹作为分类之一
+                echo "categories:" >> "$temp_file"
+                echo "  - \"$folder\"" >> "$temp_file"
                 echo "---" >> "$temp_file"
+
                 cat "$file" >> "$temp_file"
                 mv "$temp_file" "$file"
+              else
+                # 如果已存在 front matter，可在此对已有 front matter 做更复杂处理（略）
+                # 如需在已有 front matter 中追加 categories，可自行在此追加
+                :
               fi
             fi
           done
-          
-          # 创建 archives 页面
-          hugo new archives.md
 
       - name: Build with Hugo
         env:
