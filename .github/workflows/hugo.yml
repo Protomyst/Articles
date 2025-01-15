@@ -2,9 +2,9 @@ name: Deploy Hugo site to Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: [ main ]
   schedule:
-    - cron: '0 2 * * *'  # Runs at 2 AM UTC daily
+    - cron: '0 2 * * *'  # Run at 2 AM UTC daily
   workflow_dispatch:      # Manual trigger
 
 permissions:
@@ -17,108 +17,100 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-deploy:
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+        with:
+          submodules: 'recursive'
+
       - name: Setup Hugo
         uses: peaceiris/actions-hugo@v2
         with:
           hugo-version: 'latest'
           extended: true
-          
-      - name: Create Hugo site
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Download PaperMod theme
         run: |
-          # Initialize Hugo site
-          hugo new site . --force
-          
-          # Install PaperMod theme
-          git submodule add --force https://github.com/adityatelange/hugo-PaperMod.git themes/PaperMod
-          
-          # Create Hugo config
-          cat > config.yml << 'EOL'
-          baseURL: "/"
-          title: "My Blog"
-          theme: "PaperMod"
-          
-          menu:
-            main:
-              - identifier: archives
-                name: Archives
-                url: /archives/
-                weight: 10
-                
-          params:
-            defaultTheme: auto
-            ShowReadingTime: true
-            ShowShareButtons: true
-            ShowPostNavLinks: true
-            ShowBreadCrumbs: true
-            ShowCodeCopyButtons: true
-            ShowArchiveCount: true
-          EOL
-          
-      - name: Process Markdown files
+          mkdir -p themes
+          git clone https://github.com/adityatelange/hugo-PaperMod.git themes/PaperMod
+
+      - name: Generate Front Matter and Process Files
         run: |
-          mkdir -p content/posts
-          
-          # Function to add front matter
-          add_front_matter() {
+          # Create content directories if they don't exist
+          mkdir -p content
+
+          # Function to generate front matter
+          generate_front_matter() {
             local file="$1"
-            local folder="$2"
             local title=$(basename "$file" .md)
-            local date=$(date +"%Y-%m-%d")
+            local date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            local category=$(dirname "$file" | sed 's|^./||')
             
-            # Don't process README.md
-            if [ "$(basename "$file")" = "README.md" ]; then
+            # Skip if front matter exists
+            if grep -q "^---" "$file"; then
+              cp "$file" "content/$category/$title.md"
               return
             }
             
-            # Create temporary file
-            temp_file=$(mktemp)
-            
-            # Add front matter
-            cat > "$temp_file" << EOL
-          ---
-          title: "${title}"
-          date: ${date}
-          categories: ["${folder}"]
-          tags: ["${folder}"]
-          ---
-          EOL
-            
-            # Append original content
-            cat "$file" >> "$temp_file"
-            
-            # Copy to content/posts with folder prefix to maintain unique names
-            cp "$temp_file" "content/posts/${folder}-${title}.md"
-            rm "$temp_file"
+            # Generate new front matter
+            {
+              echo "---"
+              echo "title: \"$title\""
+              echo "date: $date"
+              echo "categories: [\"$category\"]"
+              echo "---"
+              cat "$file"
+            } > "content/$category/$title.md"
           }
-          
-          # Process all .md files in subdirectories
-          find . -type f -name "*.md" | while read -r file; do
-            if [ "$(basename "$file")" != "README.md" ]; then
-              folder=$(basename "$(dirname "$file")")
-              add_front_matter "$file" "$folder"
-            fi
+
+          # Process all .md files except README.md
+          find . -type f -name "*.md" ! -name "README.md" | while read file; do
+            dir=$(dirname "$file" | sed 's|^./||')
+            mkdir -p "content/$dir"
+            generate_front_matter "$file"
           done
+
+      - name: Configure Hugo
+        run: |
+          cat > config.toml << EOL
+          baseURL = "https://doc.protomyst.com"
+          languageCode = "en-us"
+          title = "My Blog"
+          theme = "PaperMod"
           
-      - name: Build
+          [params]
+            defaultTheme = "auto"
+            ShowReadingTime = true
+            ShowShareButtons = true
+            ShowPostNavLinks = true
+            ShowBreadCrumbs = true
+            ShowCodeCopyButtons = true
+            ShowToc = true
+            
+          [menu]
+            main = [
+              {identifier = "archives", name = "Archives", url = "/archives/", weight = 10},
+              {identifier = "categories", name = "Categories", url = "/categories/", weight = 20}
+            ]
+          EOL
+
+      - name: Build site
         run: hugo --minify
-        
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-        
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './public'
-          
+          path: ./public
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
