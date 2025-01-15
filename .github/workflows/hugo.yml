@@ -1,23 +1,29 @@
-name: Hugo Build and Deploy
+name: Deploy Hugo site to Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
   schedule:
     - cron: '0 2 * * *'  # Runs at 2 AM UTC daily
-  workflow_dispatch:  # Enables manual trigger
+  workflow_dispatch:      # Manual trigger
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  build-deploy:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
         
       - name: Setup Hugo
@@ -26,89 +32,92 @@ jobs:
           hugo-version: 'latest'
           extended: true
           
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-          
-      - name: Download Theme
+      - name: Create Hugo site
         run: |
-          mkdir -p themes/PaperMod
-          curl -L https://github.com/adityatelange/hugo-PaperMod/archive/refs/heads/master.tar.gz | tar xz -C themes/PaperMod --strip-components=1
+          # Initialize Hugo site
+          hugo new site . --force
           
-      - name: Create Hugo Config
-        run: |
+          # Install PaperMod theme
+          git submodule add --force https://github.com/adityatelange/hugo-PaperMod.git themes/PaperMod
+          
+          # Create Hugo config
           cat > config.yml << 'EOL'
-          baseURL: 'https://doc.protomyst.com/'
-          languageCode: 'en-us'
-          title: 'My Blog'
-          theme: 'PaperMod'
+          baseURL: "/"
+          title: "My Blog"
+          theme: "PaperMod"
           
-          taxonomies:
-            category: categories
-            archive: archives
-            
+          menu:
+            main:
+              - identifier: archives
+                name: Archives
+                url: /archives/
+                weight: 10
+                
           params:
             defaultTheme: auto
-            ShowBreadCrumbs: true
+            ShowReadingTime: true
+            ShowShareButtons: true
             ShowPostNavLinks: true
+            ShowBreadCrumbs: true
             ShowCodeCopyButtons: true
+            ShowArchiveCount: true
           EOL
           
-      - name: Process Markdown Files
+      - name: Process Markdown files
         run: |
-          python - << 'EOL'
-          import os
-          import re
-          from datetime import datetime
+          mkdir -p content/posts
           
-          def add_front_matter(file_path):
-              with open(file_path, 'r', encoding='utf-8') as f:
-                  content = f.read()
-              
-              # Skip if front matter already exists
-              if content.startswith('---'):
-                  return
-                  
-              # Get relative folder path for archive
-              folder = os.path.dirname(file_path)
-              if folder.startswith('./'):
-                  folder = folder[2:]
-              
-              # Extract title from filename
-              filename = os.path.basename(file_path)
-              title = os.path.splitext(filename)[0]
-              
-              # Create front matter
-              front_matter = f"""---
-          title: "{title}"
-          date: {datetime.now().strftime('%Y-%m-%d')}
-          archives: ["{folder}"]
+          # Function to add front matter
+          add_front_matter() {
+            local file="$1"
+            local folder="$2"
+            local title=$(basename "$file" .md)
+            local date=$(date +"%Y-%m-%d")
+            
+            # Don't process README.md
+            if [ "$(basename "$file")" = "README.md" ]; then
+              return
+            }
+            
+            # Create temporary file
+            temp_file=$(mktemp)
+            
+            # Add front matter
+            cat > "$temp_file" << EOL
           ---
-          
-          """
-              
-              # Write updated content
-              with open(file_path, 'w', encoding='utf-8') as f:
-                  f.write(front_matter + content)
-          
-          # Process all markdown files except README.md
-          for root, dirs, files in os.walk('.'):
-              for file in files:
-                  if file.endswith('.md') and file.lower() != 'readme.md':
-                      add_front_matter(os.path.join(root, file))
+          title: "${title}"
+          date: ${date}
+          categories: ["${folder}"]
+          tags: ["${folder}"]
+          ---
           EOL
+            
+            # Append original content
+            cat "$file" >> "$temp_file"
+            
+            # Copy to content/posts with folder prefix to maintain unique names
+            cp "$temp_file" "content/posts/${folder}-${title}.md"
+            rm "$temp_file"
+          }
           
-      - name: Build Site
+          # Process all .md files in subdirectories
+          find . -type f -name "*.md" | while read -r file; do
+            if [ "$(basename "$file")" != "README.md" ]; then
+              folder=$(basename "$(dirname "$file")")
+              add_front_matter "$file" "$folder"
+            fi
+          done
+          
+      - name: Build
         run: hugo --minify
         
       - name: Setup Pages
         uses: actions/configure-pages@v4
         
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v2
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          path: ./public
+          path: './public'
           
       - name: Deploy to GitHub Pages
         id: deployment
