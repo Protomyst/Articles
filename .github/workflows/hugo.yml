@@ -59,7 +59,7 @@ jobs:
             if grep -q "^---" "$file"; then
               cp "$file" "content/$category/$title.md"
               return
-            }
+            fi
             
             # Generate new front matter
             {
