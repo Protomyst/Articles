@@ -1,342 +1,153 @@
-name: Deploy Hugo site to Pages
+name: Hugo PaperMod Deploy
 
 on:
-  # 在推送到 main 分支时触发
   push:
-    branches: ["main"]
-  # 每天凌晨 2 点触发
+    branches: [main]
   schedule:
-    - cron: "0 2 * * *"
-  # 允许手动触发
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
+    - cron: '0 2 * * *'  # 每天 2 点触发
+  workflow_dispatch:      # 手动触发
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    env:
-      HUGO_VERSION: 0.121.1
+
     steps:
-      #-----------------------------
-      # 1. 安装 Hugo
-      #-----------------------------
-      - name: Install Hugo CLI
-        run: |
-          wget -O ${{ runner.temp }}/hugo.deb \
-            https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb
-          sudo dpkg -i ${{ runner.temp }}/hugo.deb
+      # 1. 检出仓库代码
+      - name: Check out
+        uses: actions/checkout@v3
 
-      #-----------------------------
-      # 2. 检出仓库代码
-      #-----------------------------
-      - name: Checkout
-        uses: actions/checkout@v4
+      # 2. 安装 Hugo
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v2
         with:
-          fetch-depth: 0  # 获取完整的 git 历史 (便于获取最后修改时间等)
+          hugo-version: 'latest'
 
-      #-----------------------------
-      # 3. 配置 GitHub Pages
-      #-----------------------------
-      - name: Setup Pages
-        id: pages
-        uses: actions/configure-pages@v4
-
-      #-----------------------------
-      # 4. 初始化 Hugo 站点
-      #   - 创建 config.toml (baseURL 改为 doc.protomyst.com)
-      #   - 下载主题 & 创建 archetypes
-      #   - 创建 list.json.json (去掉 “:=” 短变量声明，避免 parse 错误)
-      #   - 创建 header.html (搜索 & 归档按钮, Fuse.js via CDN)
-      #-----------------------------
-      - name: Init Hugo Site
+      # 3. 生成 content 文件夹，并为除 README.md 外的所有 Markdown 文件添加 Front Matter
+      - name: Prepare content
         run: |
-          #-----------------------------------------------------------------
-          # 4.1 创建 config.toml
-          #-----------------------------------------------------------------
-          mkdir -p ./config
-          cat > ./config/config.toml <<EOL
-          baseURL = 'doc.protomyst.com'
-          languageCode = 'zh-cn'
-          title = 'Articles'
-          theme = 'paper'
-          
-          [params]
-            github = 'Protomyst'
-            rss = true
-            
-          [taxonomies]
-            category = 'categories'
-            tag = 'tags'
-            
-          [markup.goldmark.renderer]
-            unsafe = true
+          # 如果已有 content 文件夹，先删除，保证干净的构建环境
+          rm -rf content
+          mkdir -p content
 
-          # 主页同时输出 HTML 和 JSON (index.json)
-          [outputs]
-            home = ["HTML", "JSON"]
-          EOL
-
-          #-----------------------------------------------------------------
-          # 4.2 下载并应用主题 (nanxiaobei/hugo-paper)
-          #-----------------------------------------------------------------
-          rm -rf themes/paper
-          git clone https://github.com/nanxiaobei/hugo-paper themes/paper
-
-          #-----------------------------------------------------------------
-          # 4.3 创建 archetypes/default.md
-          #-----------------------------------------------------------------
-          mkdir -p archetypes
-          cat > archetypes/default.md <<EOL
-          ---
-          title: "{{ replace .Name "-" " " | title }}"
-          date: {{ .Date }}
-          categories: []
-          tags: []
-          draft: false
-          ---
-          EOL
-
-          #-----------------------------------------------------------------
-          # 4.4 创建 layouts/_default/list.json.json
-          #     重点：去掉 “:=” 写法，改用一个 $first 初始化 false
-          #-----------------------------------------------------------------
-          mkdir -p layouts/_default
-          cat > layouts/_default/list.json.json <<'EOL'
-          {{/* 
-            Hugo 会用此模板生成 /index.json
-            避免使用 :=，改为常规赋值
-          */}}
-          {{ $first := false }}
-          [
-          {{ range .Data.Pages -}}
-            {{- if not $first -}}
-              {{- $first = true -}}
-            {{- else -}}
-              ,
-            {{- end -}}
-            {
-              "title": {{ .Title | jsonify }},
-              "url": {{ .Permalink | jsonify }},
-              "summary": {{ .Summary | jsonify }},
-              "content": {{ .Plain | replace "\n" " " | jsonify }},
-              "date": "{{ .Date }}"
-            }
-          {{ end }}
-          ]
-          EOL
-
-          #-----------------------------------------------------------------
-          # 4.5 在主题里创建/覆盖一个简单 header.html
-          #     里边插入「搜索 & 归档」按钮
-          #     通过 CDN 引入 Fuse.js
-          #-----------------------------------------------------------------
-          mkdir -p themes/paper/layouts/partials
-          cat > themes/paper/layouts/partials/header.html <<'EOF'
-          {{/* 
-            简化示例, header.html:
-            - 展示 “首页 / 归档 / 搜索” 
-            - Fuse.js 搜索 (CDN)
-          */}}
-          <header>
-            <nav>
-              <a href="/">首页</a>
-              <a href="/archives">归档</a>
-              <a href="#" onclick="toggleSearch()">搜索</a>
-            </nav>
-            <div id="search-container" style="display:none;">
-              <input type="text" id="search-input" placeholder="输入关键字..." />
-              <div id="search-results"></div>
-            </div>
-          </header>
-
-          <!-- 显示/隐藏搜索框 -->
-          <script>
-          function toggleSearch() {
-            const container = document.getElementById('search-container')
-            if (container.style.display === 'none') {
-              container.style.display = 'block'
-            } else {
-              container.style.display = 'none'
-            }
-          }
-          </script>
-
-          <!-- 通过 CDN 引入 Fuse.js -->
-          <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
-
-          <!-- 简单前端搜索逻辑 -->
-          <script>
-          document.addEventListener('DOMContentLoaded', function () {
-            const searchInput = document.getElementById('search-input')
-            const searchResults = document.getElementById('search-results')
-            const fuseIndexUrl = '/index.json'
-            let fuse = null
-
-            fetch(fuseIndexUrl)
-              .then((res) => res.json())
-              .then((data) => {
-                fuse = new Fuse(data, {
-                  keys: ['title', 'summary', 'content'],
-                  includeScore: true,
-                  threshold: 0.4,
-                })
-              })
-              .catch((err) => {
-                console.error('加载 /index.json 失败:', err)
-              })
-
-            if (searchInput) {
-              searchInput.addEventListener('input', function () {
-                const query = searchInput.value.trim()
-                if (!query || !fuse) {
-                  searchResults.innerHTML = ''
-                  return
-                }
-                const results = fuse.search(query)
-                renderResults(results)
-              })
-            }
-
-            function renderResults(results) {
-              searchResults.innerHTML = ''
-              if (results.length === 0) {
-                searchResults.innerHTML = '<p>没有找到任何结果...</p>'
-                return
-              }
-              const ul = document.createElement('ul')
-              results.forEach((r) => {
-                const item = r.item
-                const li = document.createElement('li')
-                const link = document.createElement('a')
-                link.href = item.url
-                link.textContent = item.title
-                li.appendChild(link)
-                ul.appendChild(li)
-              })
-              searchResults.appendChild(ul)
-            }
-          })
-          </script>
-          EOF
-
-          #-----------------------------------------------------------------
-          # 4.6 创建内容目录
-          #-----------------------------------------------------------------
-          mkdir -p content/posts
-
-      #-----------------------------
-      # 5. 处理 Markdown 文件：
-      #   - 忽略 README.md
-      #   - 若无 Front Matter 则添加
-      #   - 若已有 Front Matter 则只更新 archive 字段
-      #   - 目录名称 => archive 字段
-      #   - 移动到 content/posts/
-      #-----------------------------
-      - name: Process Markdown Files
-        run: |
-          for file in $(find . -name '*.md' \
-                        -not -path "./themes/*" \
-                        -not -path "./archetypes/*" \
-                        -not -path "./layouts/*" \
-                        -not -path "./content/*" \
-                        -not -name "README.md"); do
-
-            # 获取相对路径 & 文件夹名
-            relative_path="${file#./}"
-            folder_path="$(dirname "$relative_path")"
-            folder_name="$(basename "$folder_path")"
-
-            if [ "$folder_path" = "." ]; then
-              folder_name="root"
+          # 处理顶层的目录和文件（排除 .github、content、.git、README.md、.gitignore 等）
+          for item in $(ls -A); do
+            # 跳过指定文件夹或文件
+            if [ "$item" = ".github" ] || [ "$item" = "content" ] || [ "$item" = ".git" ] || [ "$item" = "README.md" ] || [ "$item" = ".gitignore" ]; then
+              continue
             fi
 
-            # 检查 Front Matter
-            if grep -q "^---" "$file"; then
-              # 已有 Front Matter -> 更新 archive
-              temp_file=$(mktemp)
-              in_front_matter=false
-              archive_field_added=false
+            # 如果是一个文件且后缀为 .md，则处理它（排除 README.md）
+            if [ -f "$item" ] && [[ "$item" == *.md ]]; then
+              baseName=$(basename "$item")
+              if ! grep -q '^---' "$item"; then
+                # 不存在 front matter，则创建
+                cat <<EOF > "content/$baseName"
+                ---
+                title: ${baseName%.md}
+                date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                ---
+                EOF
+                cat "$item" >> "content/$baseName"
+              else
+                # 已经有 front matter，直接复制
+                cp "$item" "content/$baseName"
+              fi
+            fi
 
-              while IFS= read -r line; do
-                if [ "$line" = "---" ] && [ "$in_front_matter" = false ]; then
-                  in_front_matter=true
-                  echo "$line" >> "$temp_file"
-                  continue
-                elif [ "$line" = "---" ] && [ "$in_front_matter" = true ]; then
-                  if [ "$archive_field_added" = false ]; then
-                    echo "archive: $folder_name" >> "$temp_file"
-                  fi
-                  in_front_matter=false
-                  echo "$line" >> "$temp_file"
-                  continue
-                fi
-
-                if [ "$in_front_matter" = true ]; then
-                  if [[ "$line" =~ ^archive: ]]; then
-                    echo "archive: $folder_name" >> "$temp_file"
-                    archive_field_added=true
-                  else
-                    echo "$line" >> "$temp_file"
-                  fi
+            # 如果是一个目录，则处理目录下所有 .md 文件
+            if [ -d "$item" ]; then
+              folderName=$(basename "$item")
+              mkdir -p "content/$folderName"
+              for mdfile in $(find "$item" -type f -name '*.md' ! -name 'README.md'); do
+                baseName=$(basename "$mdfile")
+                # 如果没有 front matter 则添加
+                if ! grep -q '^---' "$mdfile"; then
+                  cat <<EOF > "content/$folderName/$baseName"
+---
+title: ${baseName%.md}
+date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+---
+EOF
+                  cat "$mdfile" >> "content/$folderName/$baseName"
                 else
-                  echo "$line" >> "$temp_file"
+                  cp "$mdfile" "content/$folderName/$baseName"
                 fi
-              done < "$file"
-
-              mv "$temp_file" "$file"
-            else
-              # 无 Front Matter -> 新增
-              title=$(basename "$file" .md)
-              date=$(git log -1 --format=%aI -- "$file")
-              temp_file=$(mktemp)
-              echo "---" > "$temp_file"
-              echo "title: \"$title\"" >> "$temp_file"
-              echo "date: $date" >> "$temp_file"
-              echo "archive: $folder_name" >> "$temp_file"
-              echo "---" >> "$temp_file"
-              cat "$file" >> "$temp_file"
-              mv "$temp_file" "$file"
+              done
             fi
-
-            # 移动文件到 content/posts/
-            mv "$file" content/posts/
           done
 
-      #-----------------------------
-      # 6. Hugo 构建
-      #   - 使用 --config ./config/config.toml
-      #   - --gc, --minify
-      #-----------------------------
-      - name: Build with Hugo
-        env:
-          HUGO_ENVIRONMENT: production
-          HUGO_ENV: production
+      # 4. 创建搜索页和归档页（PaperMod 主题自带 search 和 archives 布局）
+      - name: Add search and archives pages
         run: |
-          hugo --gc --minify --config ./config/config.toml
+          mkdir -p content/search
+          cat <<EOF > content/search/_index.md
+---
+title: "Search"
+layout: "search"
+url: "/search/"
+---
+EOF
 
-      #-----------------------------
-      # 7. 上传构建成果 (./public)
-      #-----------------------------
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+          mkdir -p content/archives
+          cat <<EOF > content/archives/_index.md
+---
+title: "Archives"
+layout: "archives"
+url: "/archives/"
+---
+EOF
+
+      # 5. 创建 Hugo 配置文件（config.yml），启用 PaperMod 主题，添加菜单等
+      - name: Create Hugo config
+        run: |
+          cat <<EOT > config.yml
+baseURL: "https://doc.protomyst.com/"
+title: "Articles"
+languageCode: "zh-cn"
+# 如果你要显示中文时间，可设置为 "zh-cn" 并在 PaperMod config 中做相应调整
+
+theme: "PaperMod"
+
+# 不需要生成的页面类型可以禁用
+disableKinds:
+  - RSS
+  - sitemap
+  - taxonomy
+  - taxonomyTerm
+
+# 菜单：主页上显示归档和搜索按钮
+menu:
+  main:
+    - name: "Archives"
+      url: "/archives"
+      weight: 1
+    - name: "Search"
+      url: "/search"
+      weight: 2
+
+# PaperMod 专属配置
+params:
+  env: "production"
+  # 启用搜索
+  enableSearch: true
+
+  # 其他可选设置
+  ShowReadingTime: false
+  ShowShareButtons: true
+  ShowPostNavLinks: true
+
+# 主题相关配置请参考 PaperMod 文档可自行添加
+EOT
+
+      # 6. 构建 Hugo 站点
+      - name: Build with Hugo
+        run: |
+          hugo --minify
+
+      # 7. 部署到 GitHub Pages
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          path: ./public
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          personal_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages  # 部署到 gh-pages 分支，你也可以改为别的分支
