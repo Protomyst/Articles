@@ -1,20 +1,22 @@
 name: Deploy Hugo site to Pages
 
 on:
-  # 手动触发
-  workflow_dispatch:
-  # 每天2点触发（使用UTC时间）
-  schedule:
-    - cron: '0 2 * * *'
-  # 推送触发
+  # 在推送到主分支时触发
   push:
     branches: ["main"]
+  # 每天凌晨2点触发
+  schedule:
+    - cron: '0 18 * * *' # UTC时间18点，北京时间凌晨2点
+  # 允许手动触发
+  workflow_dispatch:
 
+# 设置 GITHUB_TOKEN 的权限
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# 允许一个并发部署
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -43,7 +45,7 @@ jobs:
         run: |
           # 创建 Hugo 站点配置
           cat > config.toml <<EOL
-          baseURL = 'https://doc.protomyst.com/'
+          baseURL = 'https://protomyst.github.io/Articles/'
           languageCode = 'zh-cn'
           title = 'Articles'
           theme = 'paper'
@@ -51,139 +53,27 @@ jobs:
           [params]
             github = 'Protomyst'
             rss = true
-            
-          [menu]
-            main = [
-              { identifier = "search", name = "搜索", url = "/search/", weight = 10 },
-              { identifier = "categories", name = "分类", url = "/categories/", weight = 20 },
-              { identifier = "archives", name = "归档", url = "/archives/", weight = 30 }
-            ]
-            
+            # 启用搜索
+            enableSearch = true
+            # 主页显示搜索和归档按钮
+            homeInfoParams = ["posts", "archives", "search"]
+
           [taxonomies]
             category = 'categories'
             tag = 'tags'
+            # 增加归档
+            archive = 'archives'
             
           [markup.goldmark.renderer]
             unsafe = true
-            
-          # 启用搜索所需的 JSON 输出
+
+          # 搜索配置 (fuse.js)
           [outputs]
-            home = ["HTML", "RSS", "JSON"]
-            section = ["HTML", "RSS"]
+            home = [ "HTML", "RSS", "JSON" ]
           EOL
           
           # 下载并设置主题
           git clone https://github.com/nanxiaobei/hugo-paper themes/paper
-          
-          # 创建搜索页面
-          mkdir -p content/search
-          cat > content/search/_index.md <<EOL
-          ---
-          title: "搜索"
-          layout: "search"
-          ---
-          EOL
-          
-          # 创建搜索页面模板
-          mkdir -p layouts/_default
-          cat > layouts/_default/search.html <<EOL
-          {{ define "main" }}
-          <div id="search-container">
-            <input type="text" id="search-input" placeholder="搜索文章...">
-            <div id="search-results"></div>
-          </div>
-          <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
-          <script>
-            document.addEventListener('DOMContentLoaded', function() {
-              const searchInput = document.getElementById('search-input');
-              const searchResults = document.getElementById('search-results');
-              
-              fetch('/index.json')
-                .then(response => response.json())
-                .then(data => {
-                  const fuse = new Fuse(data, {
-                    keys: ['title', 'content', 'tags', 'categories'],
-                    threshold: 0.3,
-                    includeMatches: true
-                  });
-                  
-                  searchInput.addEventListener('input', () => {
-                    const query = searchInput.value;
-                    if (query.length >= 2) {
-                      const results = fuse.search(query);
-                      searchResults.innerHTML = results
-                        .map(result => \`
-                          <div class="search-result">
-                            <a href="\${result.item.permalink}">
-                              <h3>\${result.item.title}</h3>
-                              <p>\${result.item.summary || ''}</p>
-                            </a>
-                          </div>
-                        \`)
-                        .join('');
-                    } else {
-                      searchResults.innerHTML = '';
-                    }
-                  });
-                });
-            });
-          </script>
-          <style>
-            #search-container {
-              margin: 20px 0;
-            }
-            #search-input {
-              width: 100%;
-              padding: 10px;
-              font-size: 16px;
-              border: 1px solid #ddd;
-              border-radius: 4px;
-            }
-            .search-result {
-              margin: 20px 0;
-              padding: 10px;
-              border-bottom: 1px solid #eee;
-            }
-            .search-result h3 {
-              margin: 0 0 10px 0;
-            }
-          </style>
-          {{ end }}
-          EOL
-          
-          # 创建 index.json 模板
-          cat > layouts/_default/index.json <<EOL
-          {{- \$index := slice -}}
-          {{- range .Site.RegularPages -}}
-              {{- \$index = \$index | append (dict "title" .Title "permalink" .Permalink "content" .Plain "summary" .Summary "tags" .Params.tags "categories" .Params.categories) -}}
-          {{- end -}}
-          {{- \$index | jsonify -}}
-          EOL
-          
-          # 创建归档页面模板
-          cat > layouts/_default/archives.html <<EOL
-          {{ define "main" }}
-          <h1>归档</h1>
-          {{ range .Site.Sections }}
-            <h2>{{ .Title }}</h2>
-            <ul>
-              {{ range .Pages }}
-                <li>
-                  <span>{{ .Date.Format "2006-01-02" }}</span>
-                  <a href="{{ .Permalink }}">{{ .Title }}</a>
-                  {{ if .Params.categories }}
-                  <span class="categories">
-                    [{{ range .Params.categories }}
-                      <a href="/categories/{{ . | urlize }}">{{ . }}</a>
-                    {{ end }}]
-                  </span>
-                  {{ end }}
-                </li>
-              {{ end }}
-            </ul>
-          {{ end }}
-          {{ end }}
-          EOL
           
           # 创建 archetypes 模板
           mkdir -p archetypes
@@ -197,69 +87,43 @@ jobs:
           ---
           EOL
           
-          # 创建内容目录结构
+          cat > archetypes/archives.md <<EOL
+          ---
+          title: "Archives"
+          layout: "archives"
+          summary: "archives"
+          ---
+          EOL
+          
+          # 创建内容目录
           mkdir -p content/posts
           
-          # 移动所有 markdown 文件到对应的文件夹，排除 README.md
-          find . -name "*.md" -not -name "README.md" -not -path "./themes/*" -not -path "./archetypes/*" -not -path "./content/*" | while read file; do
-            # 获取文件所在目录作为分类
-            dir=$(dirname "$file")
-            if [ "$dir" = "." ]; then
-              dir="uncategorized"
-            else
-              dir=$(basename "$dir")
-            fi
-            
-            # 创建目标目录
-            mkdir -p "content/posts/$dir"
-            
-            # 移动文件并添加 front matter（如果需要）
+          # 移动所有 markdown 文件到 content/posts
+          find . -name "*.md" -not -path "./themes/*" -not -path "./archetypes/*" -not -path "./content/*" -not -name "README.md" -exec mv {} content/posts/ \;
+          
+          # 修正 front matter
+          for file in content/posts/*.md; do
             if [ -f "$file" ]; then
-              filename=$(basename "$file")
+              # 如果文件没有 front matter，添加它
               if ! grep -q "^---" "$file"; then
                 title=$(basename "$file" .md)
                 date=$(git log -1 --format=%aI -- "$file")
+                folder=$(basename $(dirname "$file"))
                 temp_file=$(mktemp)
                 echo "---" > "$temp_file"
                 echo "title: \"$title\"" >> "$temp_file"
                 echo "date: $date" >> "$temp_file"
-                echo "categories: [\"$dir\"]" >> "$temp_file"
+                # 将文件夹名称添加到 archives
+                echo "archives: [\"$folder\"]" >> "$temp_file"
                 echo "---" >> "$temp_file"
                 cat "$file" >> "$temp_file"
-                mv "$temp_file" "content/posts/$dir/$filename"
-              else
-                # 如果已有 front matter，检查并添加分类
-                temp_file=$(mktemp)
-                awk -v dir="$dir" '
-                BEGIN { in_front_matter=0; categories_found=0; }
-                /^---$/ {
-                  if (in_front_matter) {
-                    if (!categories_found) print "categories: [\"" dir "\"]"
-                    in_front_matter=0
-                  } else {
-                    in_front_matter=1
-                  }
-                  print
-                  next
-                }
-                in_front_matter && /^categories:/ {
-                  categories_found=1
-                }
-                { print }' "$file" > "$temp_file"
-                mv "$temp_file" "content/posts/$dir/$filename"
+                mv "$temp_file" "$file"
               fi
             fi
           done
           
-          # 创建归档入口页面
-          cat > content/archives.md <<EOL
-          ---
-          title: "归档"
-          layout: "archives"
-          url: "/archives"
-          summary: archives
-          ---
-          EOL
+          # 创建 archives 页面
+          hugo new archives.md
 
       - name: Build with Hugo
         env:
