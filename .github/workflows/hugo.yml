@@ -63,11 +63,11 @@ jobs:
                 # 如果没有 front matter 则添加
                 if ! grep -q '^---' "$mdfile"; then
                   cat <<EOF > "content/$folderName/$baseName"
----
-title: ${baseName%.md}
-date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
----
-EOF
+                  ---
+                  title: ${baseName%.md}
+                  date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                  ---
+                  EOF
                   cat "$mdfile" >> "content/$folderName/$baseName"
                 else
                   cp "$mdfile" "content/$folderName/$baseName"
