@@ -66,7 +66,7 @@ jobs:
               echo "date: $date"
               echo "categories: [\"$category\"]"
               # 如果想统一用同一个类型，取消下面行的注释：
-              echo "type: \"post\""
+              echo "type: post"
               echo "---"
               cat "$file"
             } > "content/$category/$title.md"
