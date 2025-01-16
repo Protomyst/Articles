@@ -30,6 +30,15 @@ jobs:
         with:
           submodules: 'recursive'
 
+      - name: Detect domain from CNAME
+        run: |
+          if [ -f CNAME ]; then
+            domain=$(cat CNAME)
+          else
+            domain="${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          fi
+          echo "BASEURL=$domain" >> $GITHUB_ENV
+
       # 2. 设置 Hugo
       - name: Setup Hugo
         uses: peaceiris/actions-hugo@v2
@@ -55,7 +64,7 @@ jobs:
             local category=$(dirname "$file" | sed 's|^./||')
 
             # 如果已有 front matter，就直接复制
-            if grep -q "^---" "$file"; then
+            if sed -n '1{/^---$/h}; /^---$/{x;p;q}; H' "$file" | grep -q "^---$"; then
               cp "$file" "content/$category/$title.md"
               return
             fi
@@ -85,7 +94,7 @@ jobs:
       - name: Configure Hugo
         run: |
           cat > config.toml << EOL
-          baseURL = "https://doc.protomyst.com"
+          baseURL = "https://${{ env.BASEURL }}"
           languageCode = "zh-cn"
           title = "${{ github.repository_owner }}'s Space"
           theme = "PaperMod"
