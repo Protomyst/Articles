@@ -23,7 +23,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
-      CUSTOM_DOMAIN: ${{ github.event.repository.pages.cname }}
+      CUSTOM_DOMAIN: ${{ github.event.pages.custom_domain }}
     
     steps:
       # 1. 检出代码
