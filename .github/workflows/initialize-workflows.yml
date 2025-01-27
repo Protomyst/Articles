@@ -6,7 +6,10 @@ on:
       - main
   workflow_dispatch:
 
-permissions: write-all
+# https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#permissions
+permissions:
+  actions: write
+  contents: write
 
 env:
   WORKFLOWS_REPO: "Protomyst/Resources"
