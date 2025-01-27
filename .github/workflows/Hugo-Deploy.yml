@@ -11,4 +11,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Hugo Deploy
-        uses: Protomyst/your-repo-name@v1.0.3
+        uses: Protomyst/Hugo-PaperMod-Deploy@v1.0.3
