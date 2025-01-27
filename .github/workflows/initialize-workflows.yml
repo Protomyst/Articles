@@ -6,9 +6,7 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  actions: write
-  contents: write
+permissions: write-all
 
 env:
   WORKFLOWS_REPO: "Protomyst/Resources"
