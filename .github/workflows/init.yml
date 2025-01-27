@@ -1,0 +1,46 @@
+name: Initialize Workflows
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  WORKFLOWS_REPO: "Protomyst/Resources"
+  BRANCH: "main"
+
+jobs:
+  initialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup and download
+        run: |
+          mkdir -p .github/workflows
+          for file in add-front-matter.yml configure-settings.yml deploy-to-pages.yml; do
+            curl -o ".github/workflows/$file" \
+              "https://raw.githubusercontent.com/${{ env.WORKFLOWS_REPO }}/${{ env.BRANCH }}/$file"
+          done
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add .github/workflows/*.yml
+          git commit -m "chore: initialize workflow files"
+          
+          git rm .github/workflows/initialize-workflows.yml
+          git commit -m "chore: remove initialization workflow"
+          
+          git push origin ${GITHUB_REF##*/}
+
+      - name: Cleanup
+        if: always()
+        run: rm -f .github/workflows/initialize-workflows.yml
