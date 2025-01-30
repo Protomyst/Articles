@@ -16,6 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Hugo PaperMod Deploy
-      uses: Protomyst/Hugo-PaperMod-Deploy@1.0.4
+      uses: Protomyst/Hugo-PaperMod-Deploy@1.0.5
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
